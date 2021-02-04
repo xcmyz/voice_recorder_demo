@@ -103,7 +103,10 @@ venv.bak/
 # mypy
 .mypy_cache/
 
+# vs code
 .vscode
+.DS_Store
 
+# repo
 data
 static/data
