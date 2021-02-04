@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+  <style type="text/css">
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+    }
+
+    #container {
+      width: 100%;
+      height: 100%;
+    }
+
+    #footer {
+      width: 100%;
+      height: 50px;
+      background-color: white;
+    }
+
+    .footer-fixed {
+      position: fixed;
+      left: 0;
+      bottom: 0;
+    }
+  </style>
+  <title>Voice Conversion Demo</title>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <link rel="shortcut icon" href="/static/icon.png">
+  <link rel=stylesheet type=text/css href="{{ url_for('static', filename='css/blog.min.css') }}" />
+  <link rel=stylesheet type=text/css href="{{ url_for('static', filename='css/hilite.css') }}" />
+  {% block extra_head %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/jquery-1.11.0.min.js') }}" type="text/javascript"></script>
+  <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
+</head>
+
+<body>
+
+  <div id="nav" class="navbar navbar-default navbar-static-top" style="text-align: center;">
+    <div class="navbar-header" style="display: inline-block;float: none;">
+      {% if audio %}
+      <a class="navbar-brand" href="/"><strong>点击此处重新测试</strong></a>
+      {% else %}
+      <a class="navbar-brand" href="/"><strong>Voice Conversion</strong></a>
+      {% endif %}
+    </div>
+  </div>
+  <div id="container" class="container">
+    {% if audio %}
+    <div id="content" class="container" style="text-align: center;">
+      <h5>原始语音</h5>
+      <audio controls>
+        <source src="/static/data/{{ recorder_file }}" type="audio/wav">
+        Your browser does not support the audio element.
+      </audio>
+      <br />
+      <h5>转换语音</h5>
+      <audio controls>
+        <source src="/static/data/{{ vc_result }}" type="audio/wav">
+        Your browser does not support the audio element.
+      </audio>
+    </div>
+    {% else %}
+    <form method="POST">
+      <div id="content" class="container" style="text-align: center;">
+        <p id="info1">点击开始录音</p>
+        <button class="btn btn-primary btn-large btn-block" style="border-radius:9px;" id="startRecordingButton"
+          type="button">开始录音</button>
+        <button class="btn btn-primary btn-large btn-block" style="border-radius:9px;display:none;"
+          id="stopRecordingButton" type="button">停止录音</button>
+        <button class="btn btn-primary btn-large btn-block" style="border-radius:9px;display:none;" id="playButton"
+          type="button">收听原声</button>
+        <button class="btn btn-primary btn-large btn-block" style="border-radius:9px;display:none;"
+          id="conversionButton" type="submit">转换</button>
+      </div>
+    </form>
+    {% endif %}
+    <div id="footer" class="footer" style="text-align: center;">
+      @光子技术中心语音团队
+    </div>
+  </div>
+  <script>
+    $('#startRecordingButton').on('click', function () {
+      $('#startRecordingButton').remove();
+      $('#stopRecordingButton').show();
+    });
+
+    $('#stopRecordingButton').on('click', function () {
+      $('#stopRecordingButton').remove();
+      $('#playButton').show();
+      $('#conversionButton').show();
+    });
+
+    $('#conversionButton').on('click', function () {
+      $("conversionButton").attr("disabled", true);
+      $('#conversionButton').modal('show');
+      $($(this).parent("form")).submit()
+    });
+
+    let height = document.getElementById('container').clientHeight - document.getElementById('content').clientHeight;
+    if (height > 100) document.getElementById('footer').classList.add('footer-fixed');
+
+    var start = 0;
+    var SAMPLE_RATE = 16000;
+    String.prototype.toHHMMSS = function () {
+      var sec_num = parseInt(this, 10); // don't forget the second param
+      var hours = Math.floor(sec_num / 3600);
+      var minutes = Math.floor((sec_num - hours * 3600) / 60);
+      var seconds = sec_num - hours * 3600 - minutes * 60;
+
+      if (hours < 10) {
+        hours = "0" + hours;
+      }
+      if (minutes < 10) {
+        minutes = "0" + minutes;
+      }
+      if (seconds < 10) {
+        seconds = "0" + seconds;
+      }
+      return hours + ":" + minutes + ":" + seconds;
+    };
+
+    var startRecordingButton = document.getElementById(
+      "startRecordingButton"
+    );
+    var stopRecordingButton = document.getElementById("stopRecordingButton");
+    var playButton = document.getElementById("playButton");
+    var downloadButton = document.getElementById("downloadButton");
+
+    var leftchannel = [];
+    var rightchannel = [];
+    var recorder = null;
+    var recordingLength = 0;
+    var volume = null;
+    var mediaStream = null;
+    var context = null;
+    var blob = null;
+
+    startRecordingButton.addEventListener("click", function () {
+      info1.textContent = "Recoding...";
+      start = new Date().getTime();
+      // Initialize recorder
+      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+
+      navigator.getUserMedia(
+        {
+          // audio: true
+          audio: {
+            sampleRate: 16000,
+            channelCount: 2 // canary 中此设置未生效，始终为 2
+          }
+        },
+        function (e) {
+          console.log("user consent");
+
+          // creates the audio context
+          window.AudioContext =
+            window.AudioContext || window.webkitAudioContext;
+          context = new AudioContext({ sampleRate: 16000 });
+
+          // creates an audio node from the microphone incoming stream
+          mediaStream = context.createMediaStreamSource(e);
+
+          // https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/createScriptProcessor
+          // bufferSize: the onaudioprocess event is called when the buffer is full
+          var bufferSize = 2048;
+          var numberOfInputChannels = 2;
+          var numberOfOutputChannels = 2;
+          if (context.createScriptProcessor) {
+            recorder = context.createScriptProcessor(
+              bufferSize,
+              numberOfInputChannels,
+              numberOfOutputChannels
+            );
+          } else {
+            recorder = context.createJavaScriptNode(
+              bufferSize,
+              numberOfInputChannels,
+              numberOfOutputChannels
+            );
+          }
+
+          recorder.onaudioprocess = function (e) {
+            leftchannel.push(
+              new Float32Array(e.inputBuffer.getChannelData(0))
+            );
+            rightchannel.push(
+              new Float32Array(e.inputBuffer.getChannelData(1))
+            );
+            recordingLength += bufferSize;
+          };
+
+          // we connect the recorder
+          mediaStream.connect(recorder);
+          recorder.connect(context.destination);
+        },
+        function (e) {
+          console.error(e);
+        }
+      );
+    });
+
+    stopRecordingButton.addEventListener("click", function () {
+      info1.textContent = String((new Date().getTime() - start) / 1000).toHHMMSS();
+      window.AudioContext = window.AudioContext || window.webkitAudioContext;
+
+      // stop recording
+      recorder.disconnect(context.destination);
+      mediaStream.disconnect(recorder);
+
+      // we flat the left and right channels down
+      // Float32Array[] => Float32Array
+      var leftBuffer = flattenArray(leftchannel, recordingLength);
+      var rightBuffer = flattenArray(rightchannel, recordingLength);
+      // we interleave both channels together
+      // [left[0],right[0],left[1],right[1],...]
+      var interleaved = interleave(leftBuffer, rightBuffer);
+
+      // we create our wav file
+      var buffer = new ArrayBuffer(44 + interleaved.length * 2);
+      var view = new DataView(buffer);
+
+      // RIFF chunk descriptor
+      writeUTFBytes(view, 0, "RIFF");
+      view.setUint32(4, 44 + interleaved.length * 2, true);
+      writeUTFBytes(view, 8, "WAVE");
+      // FMT sub-chunk
+      writeUTFBytes(view, 12, "fmt ");
+      view.setUint32(16, 16, true); // chunkSize
+      view.setUint16(20, 1, true); // wFormatTag
+      view.setUint16(22, 2, true); // wChannels: stereo (2 channels)
+      view.setUint32(24, 16000, true); // dwSamplesPerSec
+      view.setUint32(28, 16000 * 4, true); // dwAvgBytesPerSec
+      view.setUint16(32, 4, true); // wBlockAlign
+      view.setUint16(34, 16, true); // wBitsPerSample
+      // data sub-chunk
+      writeUTFBytes(view, 36, "data");
+      view.setUint32(40, interleaved.length * 2, true);
+
+      // write the PCM samples
+      var index = 44;
+      var volume = 1;
+      for (var i = 0; i < interleaved.length; i++) {
+        view.setInt16(index, interleaved[i] * (0x7fff * volume), true);
+        index += 2;
+      }
+
+      // our final blob
+      blob = new Blob([view], { type: "audio/wav" });
+
+      var url = URL.createObjectURL(blob);
+
+      var form = new FormData();
+      form.append("file", blob, "recorder.wav");
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", "http://127.0.0.1:5000/upload/");
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState == 4) {
+          alert(xhr.status == 200 ? "上传成功" : "上传失败");
+        }
+      }
+      xhr.send(form);
+    });
+
+    playButton.addEventListener("click", function () {
+      if (blob == null) {
+        return;
+      }
+
+      var url = window.URL.createObjectURL(blob);
+      var audio = new Audio(url);
+      audio.play();
+    });
+
+    function flattenArray(channelBuffer, recordingLength) {
+      var result = new Float32Array(recordingLength);
+      var offset = 0;
+      for (var i = 0; i < channelBuffer.length; i++) {
+        var buffer = channelBuffer[i];
+        result.set(buffer, offset);
+        offset += buffer.length;
+      }
+      return result;
+    }
+
+    downloadButton.addEventListener("click", function () {
+      if (blob == null) {
+        return;
+      }
+
+      var url = URL.createObjectURL(blob);
+
+      var a = document.createElement("a");
+      document.body.appendChild(a);
+      a.style = "display: none";
+      a.href = url;
+      a.download = "sample.wav";
+      a.click();
+      window.URL.revokeObjectURL(url);
+    });
+
+    function interleave(leftChannel, rightChannel) {
+      var length = leftChannel.length + rightChannel.length;
+      var result = new Float32Array(length);
+
+      var inputIndex = 0;
+
+      for (var index = 0; index < length;) {
+        result[index++] = leftChannel[inputIndex];
+        result[index++] = rightChannel[inputIndex];
+        inputIndex++;
+      }
+      return result;
+    }
+
+    function writeUTFBytes(view, offset, string) {
+      for (var i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+  </script>
+</body>
+
+</html>
