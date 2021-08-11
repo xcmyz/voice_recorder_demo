@@ -17,6 +17,7 @@ basic_auth = BasicAuth(app)
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == "POST":
+        ### voice conversion ###
         return render_template("index.html", audio=True)
     return render_template('index.html', audio=False)
 
