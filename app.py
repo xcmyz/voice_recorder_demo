@@ -10,7 +10,7 @@ UPLOAD_FOLDER = 'data'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['FLASK_ADMIN_SWATCH'] = 'readable'
 app.config['BASIC_AUTH_USERNAME'] = 'root'
-app.config['BASIC_AUTH_PASSWORD'] = 'Green@dog;;123'
+app.config['BASIC_AUTH_PASSWORD'] = '123456'
 basic_auth = BasicAuth(app)
 
 
